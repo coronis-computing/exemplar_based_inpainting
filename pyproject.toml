@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "exemplar_based_inpainting"
+version = "0.1.0"
+authors = [
+  { name="Ricard Campos", email="ricard.campos@coronis.es" },
+]
+description = "Python implementation of the exemplar-based inpainting method of Criminisi et al."
+readme = "Readme.md"
+license = { file="LICENSE.txt" }
+requires-python = ">=3.7"
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.6",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Operating System :: OS Independent",
+    "Natural Language :: English"
+]
+dependencies = [
+    'flake8',
+    'mkdocs',
+    'mkdocstrings[python]',
+    'mkdocs-material',
+    'pymdown-extensions',
+    'mkdocs-include-markdown-plugin',
+    'pytest',
+    'opencv-python'
+]
+
+[tool.setuptools]
+include-package-data=true
+
+[tool.setuptools.packages.find]
+where=["."]
+[project.scripts]
+exemplar_based_inpainting = "exemplar_based_inpainting.cli_app:main"
