@@ -3,14 +3,15 @@ repo_url: https://bitbucket.org/coronis-computing/exemplar_based_inpainting
 repo_name: exemplar_based_inpainting
 #strict: true
 nav:
-  - home: index.md
-  - installation: installation.md
-  - usage: usage.md
-  - modules: api.md
+  - Home: index.md
+  - Installation: installation.md
+  - Usage: usage.md
+  - Modules: api.md
 theme:
   name: material
   language: en
-  #logo: assets/logo.png
+  logo: resources/coronis_logo_web.png
+  favicon: resources/coronis_favicon_32x32.png
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
@@ -28,9 +29,6 @@ theme:
   #   - navigation.instant
   #   - navigation.tabs.sticky
 markdown_extensions:
-  - pymdownx.emoji:
-      emoji_index: !!python/name:materialx.emoji.twemoji
-      emoji_generator: !!python/name:materialx.emoji.to_svg
   - pymdownx.critic
   - pymdownx.caret
   - pymdownx.mark
@@ -47,7 +45,6 @@ markdown_extensions:
   - toc:
       baselevel: 2
       permalink: true
-      slugify: !!python/name:pymdownx.slugs.uslugify
   - meta
 plugins:
   - include-markdown:
@@ -55,9 +52,7 @@ plugins:
       closing_tag: "!}"
   - search:
       lang: en  
-  - mkdocstrings:
-      watch:
-        - exemplar_based_inpainting
+  - mkdocstrings
 extra:
   version:
     provider: mike

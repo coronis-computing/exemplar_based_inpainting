@@ -30,7 +30,11 @@ dependencies = [
     'pymdown-extensions',
     'mkdocs-include-markdown-plugin',
     'pytest',
-    'opencv-python'
+    'opencv-python',
+    'matplotlib',
+    'scikit-image',
+    'scipy',
+    'rich'
 ]
 
 [tool.setuptools]
