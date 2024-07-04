@@ -31,9 +31,6 @@ dependencies = [
     'mkdocs-include-markdown-plugin',
     'pytest',
     'opencv-python',
-    'matplotlib',
-    'scikit-image',
-    'scipy',
     'rich'
 ]
 
