@@ -15,7 +15,8 @@ class PatchPreference(Enum):
 class SearchColorSpace(Enum):
     BGR = 0
     HSV = 1
-    LAB = 2    
+    LAB = 2
+    GRAY = 3
 
 class Inpainter():
     def __init__(self, 
@@ -25,23 +26,30 @@ class Inpainter():
                  plot_progress=False, 
                  out_progress_dir="",                  
                  show_progress_bar=True, 
-                 patch_preference="closest"):
+                 patch_preference="closest",
+                 similarity_measure="sqdiff",
+                 plot_progress_wait_ms=500):
         """Inpainter Constructor. 
-        
+
         Args:
             patch_size (int, optional): Size of the inpainting patch. Defaults to 9.
+            search_original_source_only (bool, optional): If true, just the original source image - mask will be searched for inpainting patches. If false, the growing inpainting area will also be taken into account. Defaults to False.
+            search_color_space (str, optional): Color space to use when searching for the next best filler patch. Options available: "bgr", "hsv", "lab", "gray". In case gray is selected, the input image must also be grayscale. Defaults to "bgr".
             plot_progress (bool, optional): Activates/deactivates the plotting of the inpainting process. Defaults to False.
             out_progress_dir (str, optional): Set to a directory to get the same output as in "plot_progress=True" but stored to files. Defaults to "".
             show_progress_bar (bool, optional): Activates/deactivates the progress bar. Defaults to True.
-            patch_preference (str, optional): In case there are multiple patches in the image with the same similarity, this parameter decides which one to choose. Options: 'closest' (the one closest to the query patch in the front), 'any', 'random'. Defaults to "closest".
+            patch_preference (str, optional): When more than a patch has the same similarity score, this parameter selects which one to choose. Available: "any", "closest", "random". Defaults to "closest".
+            plot_progress_wait_ms (int, optional): How many milliseconds to wait after plotting each update to the progress on screen. Defaults to 500."
 
         Raises:
-            ValueError: If a parameter is wrong.
+            ValueError: Wrong patch preference.
+            ValueError: Wrong color space.
         """
         self.patch_size = patch_size
         self.half_patch_size = (self.patch_size-1)//2
         self.search_original_source_only = search_original_source_only
         self.plot_progress = plot_progress
+        self.plot_progress_wait_ms = plot_progress_wait_ms
         self.out_progress_dir = out_progress_dir
         if self.out_progress_dir:
             if not os.path.exists(self.out_progress_dir):
@@ -60,18 +68,39 @@ class Inpainter():
             self.search_color_space = SearchColorSpace.HSV
         elif search_color_space == "lab":
             self.search_color_space = SearchColorSpace.LAB
+        elif search_color_space == "gray":
+            self.search_color_space = SearchColorSpace.GRAY
         else:
             raise ValueError("Unknown search color space \"" + search_color_space + "\"")            
+        if similarity_measure == "sqdiff":
+            self.similarity_measure = cv2.TM_SQDIFF
+        elif similarity_measure == "sqdiff_normed":
+            self.similarity_measure = cv2.TM_SQDIFF_NORMED
+        elif similarity_measure == "ccorr":
+            self.similarity_measure = cv2.TM_CCORR
+        elif similarity_measure == "ccorr_normed":
+            self.similarity_measure = cv2.TM_CCORR_NORMED
+        elif similarity_measure == "ccoeff":
+            self.similarity_measure = cv2.TM_CCOEFF
+        elif similarity_measure == "ccoeff_normed":
+            self.similarity_measure = cv2.TM_CCOEFF_NORMED
+        else:
+            raise ValueError("Unknown similarity measure \"" + similarity_measure + "\"")
         self.show_progress_bar = show_progress_bar
 
     def _initialize(self, image, mask):
         """Initializes the inpainting problem
         
+        
         Args:
             image (numpy.array): image to inpaint, in BGR color space.
             mask (numpy.array): mask containing the area to inpaint. Should be a binary image (0 == source area, 255 == to inpaint).
         """        
-        self.image = image.astype('uint8')
+        #self.image = image.astype('uint8')
+        self.image = image
+        if self.search_color_space == SearchColorSpace.GRAY and len(self.image.shape) > 2:
+            raise ValueError("If you select the color space to be gray, the input image is also expected to be grayscale (i.e., a single-channel image)")
+
         self.mask = mask.astype('uint8')
         self.mask = (self.mask > 128).astype('uint8') # Important: we change the change mask to be 0s and 1s!
 
@@ -87,8 +116,11 @@ class Inpainter():
 
         # Remove the target region from the image
         inverse_mask = (1-self.working_mask)
-        rgb_inverse_mask = to_three_channels(inverse_mask)
-        self.working_image = self.working_image * rgb_inverse_mask
+        if self.search_color_space == SearchColorSpace.GRAY:
+            self.working_image = self.working_image * inverse_mask
+        else:
+            inverse_mask_3 = to_three_channels(inverse_mask)
+            self.working_image = self.working_image * inverse_mask_3
 
     def inpaint(self, image, mask):        
         """Inpaint using the exemplar-based inpainting algorithm
@@ -142,7 +174,13 @@ class Inpainter():
         self.front = (cv2.Laplacian(self.working_mask, -1) > 0).astype('uint8')        
 
     def _plot_current_state(self, hp_pixel, best_source_patch):
-        disp_img = self.working_image.copy()
+        if self.working_image.dtype == np.float32:
+            disp_img = self.working_image * 255
+            disp_img = disp_img.astype(np.uint8)
+        else:
+            disp_img = self.working_image.copy()
+        if self.search_color_space == SearchColorSpace.GRAY:
+            disp_img = to_three_channels(disp_img)
         disp_img = cv2.drawMarker(disp_img, (hp_pixel[1], hp_pixel[0]), (255, 0, 0), cv2.MARKER_TILTED_CROSS, self.patch_size)
         disp_img = cv2.rectangle(disp_img, (best_source_patch[1][0], best_source_patch[0][0]), (best_source_patch[1][1], best_source_patch[0][1]), (0, 255, 0), 1)
         disp_img[self.front > 0] = np.array([0, 0, 255], dtype=np.uint8)        
@@ -152,7 +190,7 @@ class Inpainter():
         if self.plot_progress:
             cv2.namedWindow("Inpainting process", cv2.WINDOW_AUTOSIZE)
             cv2.imshow("Inpainting process", disp_img)
-            cv2.waitKey(1)        
+            cv2.waitKey(self.plot_progress_wait_ms)        
 
     def _update_priority(self):
         self._update_confidence()
@@ -211,7 +249,7 @@ class Inpainter():
         template = get_roi(self.working_image, target_patch)
 
         # Convert to another color space?
-        if self.search_color_space == SearchColorSpace.BGR:
+        if self.search_color_space == SearchColorSpace.BGR or self.search_color_space == SearchColorSpace.GRAY:
             working_image = self.working_image
         elif self.search_color_space == SearchColorSpace.HSV:
             template = cv2.cvtColor(template, cv2.COLOR_BGR2HSV)
@@ -222,43 +260,55 @@ class Inpainter():
         
         # Find the best match using template matching
         template_mask = 1-get_roi(self.working_mask, target_patch)
-        tm = cv2.matchTemplate(working_image, template, cv2.TM_SQDIFF, None, template_mask.astype(np.uint8)*255)
+        tm = cv2.matchTemplate(working_image, template, self.similarity_measure, None, template_mask.astype(np.uint8)*255)        
 
         # Do not include any patch from the source image that may have a pixel within the original mask
         struct_element = cv2.getStructuringElement(cv2.MORPH_RECT, (self.patch_size, self.patch_size))
-        # dilated_mask = cv2.dilate(self.working_mask.astype(np.uint8)*255, struct_element)
-        valid_mask = cv2.filter2D((1-self.working_mask), -1, struct_element, anchor=(0,0)) == ((self.patch_size)*(self.patch_size))
+        # dilated_mask = cv2.dilate(self.working_mask.astype(np.uint8)*255, struct_element)        
         
         if self.search_original_source_only:
             # Prevent taking texture from the inpainted area
-            valid_mask_ext = cv2.filter2D((1-self.mask), -1, struct_element, anchor=(0,0)) == ((self.patch_size)*(self.patch_size))
-            valid_mask = valid_mask & valid_mask_ext
+            valid_mask = cv2.filter2D((1-self.mask.astype(np.int16)), -1, struct_element, anchor=(0,0)) == ((self.patch_size)*(self.patch_size))
+            # valid_mask = valid_mask | valid_mask_ext
+        else:
+            valid_mask = cv2.filter2D((1-self.working_mask.astype(np.int16)), -1, struct_element, anchor=(0,0)) == ((self.patch_size)*(self.patch_size))
         
-        # Set the invalid areas to a high value, so that they are not selected
+        # Set the invalid areas to a high/low value (depending on the similarity measure), so that they are not selected
         valid_mask = valid_mask[0:tm.shape[0], 0:tm.shape[1]]
-        tm[~valid_mask] = np.max(tm)+1
+        if self.similarity_measure == cv2.TM_SQDIFF or self.similarity_measure == cv2.TM_SQDIFF_NORMED:
+            tm[~valid_mask] = np.max(tm)+1
+        else:
+            tm[~valid_mask] = np.min(tm)-1
 
-        # Find the best score (minimum value, as we are using SSD as measure)
+        # Find the best score (minimum value when using an SSD-line as measure, maximum otherwise)
         min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(tm)
-        min_vals_coords = cv2.findNonZero((tm == min_val).astype(np.uint8))
-        if len(min_vals_coords) != 1:
+        if self.similarity_measure == cv2.TM_SQDIFF or self.similarity_measure == cv2.TM_SQDIFF_NORMED:
+            best_val = min_val
+            best_loc = min_loc
+        else:
+            best_val = max_val
+            best_loc = max_loc
+        
+        vals_coords = cv2.findNonZero((tm == best_val).astype(np.uint8))
+
+        if len(vals_coords) != 1:
             # In case there are more than a single instance of the minimum, we need to select one based on the user-set heuristic
             if self.patch_preference == PatchPreference.ANY:
                 # Choose any (the first one in the list)
-                min_loc = min_vals_coords[0][0]
+                best_loc = vals_coords[0][0]
             elif self.patch_preference == PatchPreference.CLOSEST:
                 # Choose the one closer to the current pixel
-                distances = np.sqrt((min_vals_coords[:,:,0] - target_pixel[1]) ** 2 + (min_vals_coords[:,:,1] - target_pixel[0]) ** 2)
+                distances = np.sqrt((vals_coords[:,:,0] - target_pixel[1]) ** 2 + (vals_coords[:,:,1] - target_pixel[0]) ** 2)
                 nearest_index = np.argmin(distances)
-                min_loc = min_vals_coords[nearest_index][0]
+                best_loc = vals_coords[nearest_index][0]
             elif self.patch_preference == PatchPreference.RANDOM:
                 # Random choice
-                ind = random.randrange(len(min_vals_coords))
-                min_loc = min_vals_coords[ind][0]
+                ind = random.randrange(len(vals_coords))
+                best_loc = vals_coords[ind][0]
             else:
                 raise ValueError("Unknown patch preference")
 
-        best_patch = [[min_loc[1], min_loc[1]+self.patch_size-1], [min_loc[0], min_loc[0]+self.patch_size-1]]
+        best_patch = [[best_loc[1], best_loc[1]+self.patch_size-1], [best_loc[0], best_loc[0]+self.patch_size-1]]
         return best_patch
     
     def _update_image(self, target_pixel, source_patch):
@@ -278,7 +328,8 @@ class Inpainter():
 
         # Mix the pixels from source and target patches together
         mask = get_roi(self.working_mask, target_patch)
-        rgb_mask = to_three_channels(mask)
+        if self.search_color_space != SearchColorSpace.GRAY:
+            mask = to_three_channels(mask)
         source_data = get_roi(self.working_image, source_patch)
         target_data = get_roi(self.working_image, target_patch)
 
@@ -287,7 +338,7 @@ class Inpainter():
             # In such cases, the target_data will be smaller than the source_data (source_data is enforced to be within the image in _find_source_patch)
             source_data = source_data[0:target_data.shape[0], 0:target_data.shape[1]]
         
-        new_data = source_data*rgb_mask + target_data*(1-rgb_mask)
+        new_data = source_data*mask + target_data*(1-mask)
 
         fill_roi(
             self.working_image,
@@ -305,11 +356,11 @@ class Inpainter():
         height, width = working_image_float.shape[:2]
         inds = [*range(1, height)]
         inds.append(height-1)
-        gy = working_image_float[inds, :, :].astype(np.float64)
+        gy = working_image_float[inds, :].astype(np.float64)
         gy = gy - working_image_float
         inds = [*range(1, width)]
         inds.append(width-1)
-        gx = working_image_float[:, inds, :].astype(np.float64)
+        gx = working_image_float[:, inds].astype(np.float64)
         gx = gx - working_image_float
         front_positions = np.argwhere(self.front == 1)        
         for point in front_positions:
@@ -320,7 +371,7 @@ class Inpainter():
             if r+1 < height and self.working_mask[r+1, c] == 0:
                 pass # Already computed above (gy = gy - self.working_image)
             elif r-1 >= 0 and self.working_mask[r-1,c] == 0:
-                gy[r, c] = working_image_float[r-1, c, :] - working_image_float[r, c, :]
+                gy[r, c] = working_image_float[r-1, c] - working_image_float[r, c]
             else:
                 gy[r, c] = 0
 
@@ -328,7 +379,7 @@ class Inpainter():
             if c+1 < width and self.working_mask[r, c+1] == 0:
                 pass # Already computed above (gx = gx - self.working_image)
             elif c-1 >= 0 and self.working_mask[r, c-1] == 0:
-                gx[r, c] = working_image_float[r, c-1, :] - working_image_float[r, c, :]
+                gx[r, c] = working_image_float[r, c-1] - working_image_float[r, c]
             else:
                 gx[r, c] = 0
         if len(working_image_float.shape) == 3:                        
