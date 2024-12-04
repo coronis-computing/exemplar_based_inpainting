@@ -13,7 +13,7 @@ cd <path_to>/exemplar_based_inpainting
 pip install .
 ```
 
-# Compile the docs
+## Compile the docs
 
 This project uses `mkdocs`. Therefore, compiling the documentation is as simple as running the following command from the same directory containing the `mkdocs.yml` file:
 
@@ -27,7 +27,7 @@ And serving the documentation to read it locally:
 mkdocs serve
 ```
 
-# Usage
+## Usage
 
 After installation, you should have the `exemplar_based_inpainting` command line tool available.
 
