@@ -38,3 +38,11 @@ exemplar_based_inpainting <image_path>
 ```
 
 Please check the documentation for more information on the different parameters of this tool. We also provide some examples to test the tool in the `data` folder of this project.
+
+## Acknowledgements
+
+This project has been developed by Coronis Computing S.L. within the EMODnet Bathymetry (High Resolution Seabed Mapping) project.
+
+* EMODnet: http://www.emodnet.eu/
+* EMODnet (bathymetry): http://www.emodnet-bathymetry.eu/
+* Coronis: http://www.coronis.es
